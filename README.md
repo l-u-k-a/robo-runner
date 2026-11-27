@@ -2,6 +2,9 @@
 
 A retro, sprite-style, side-view browser game in the spirit of Lode Runner. A robot digs pits with a laser, collects all the gold, avoids chasing guards and escapes through the door. Built with TypeScript, HTML Canvas and Vite.
 
+## Play now
+The game is available to [play here](https://robo-runner-lovat.vercel.app/)
+
 ## Run
 
 ```
