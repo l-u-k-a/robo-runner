@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { CFG } from "../src/game/config";
+import { CFG, SIM_DT } from "../src/game/config";
+import { difficultyFor } from "../src/game/difficulty";
+import { parseLevel } from "../src/game/level";
+import { nextStepToNearest } from "../src/game/pathfinding";
+import { NO_INPUT, World } from "../src/game/world";
+import { LEVEL_DEFS, TOTAL_LEVELS } from "../src/levels/all";
 import { makeWorld, run, tick } from "./helpers";
 
 // Floor on row 15, so characters stand on row 14.
@@ -821,4 +826,212 @@ describe("digging at any position", () => {
     tick(w, { digRight: true });
     expect(w.pits).toHaveLength(0);
   });
+});
+
+describe("guards: no lure-downstairs, close range, chasing upwards", () => {
+  const FLOOR = "#".repeat(28);
+  const addGuard = (w: ReturnType<typeof makeWorld>, x: number, y: number) => {
+    const [g] = makeWorld({ 14: "G" }).guards;
+    w.guards.push(g);
+    g.x = x;
+    g.y = y;
+    return g;
+  };
+  const row = (len: number, marks: Record<number, string>): string => {
+    const r = Array<string>(len).fill(".");
+    for (const [i, c] of Object.entries(marks)) r[Number(i)] = c;
+    return r.join("");
+  };
+  /** Upper floor (row 12) with a ladder at column 9; the exit is on the bottom row (or nowhere near). */
+  const twoFloors = (exitCol: number | null) =>
+    makeWorld({
+      12: "#########H#################",
+      13: ".........H..................",
+      14: row(28, exitCol === null ? { 9: "H" } : { 9: "H", [exitCol]: "E" }),
+      15: FLOOR,
+    });
+  /** Bottom floor plus an upper floor (row 12) reached by a ladder at column 5; exit upstairs at `exitCol`. */
+  const exitUpstairs = (exitCol: number) =>
+    makeWorld({
+      11: row(28, { [exitCol]: "E" }),
+      12: "#####H######################",
+      13: ".....H......................",
+      14: ".....H......................",
+      15: FLOOR,
+    });
+
+  describe("not lured downstairs", () => {
+    it("a guard stays on its floor when the hero is below it and not close", () => {
+      const w = twoFloors(null);
+      w.hero.x = 4; // 5 columns and 3 rows away, behind the guard (it sweeps away from him): outside the close range
+      w.hero.y = 14;
+      const g = addGuard(w, 9, 11);
+      run(w, 2.5);
+      expect(g.y).toBe(11);
+      expect(w.status).toBe("playing");
+    });
+
+    it("stops chasing when the hero drops to a lower floor and is no longer close", () => {
+      const w = twoFloors(null);
+      w.hero.x = 14;
+      w.hero.y = 11;
+      const g = addGuard(w, 20, 11);
+      run(w, 1);
+      expect(g.x).toBeLessThan(20);
+      w.hero.x = 8;
+      w.hero.y = 14;
+      g.x = 17;
+      run(w, 1.5);
+      expect(g.y).toBe(11);
+    });
+
+    it("guards still chase a hero on their own floor, or above it", () => {
+      const w = twoFloors(null);
+      w.hero.x = 3;
+      w.hero.y = 11;
+      const g = addGuard(w, 12, 11);
+      run(w, 1.5);
+      expect(g.x).toBeLessThan(10);
+    });
+  });
+
+  describe("close range ignores floors", () => {
+    it("a guard within about a floor and a half chases even a hero below it", () => {
+      const w = twoFloors(null);
+      w.hero.x = 11;
+      w.hero.y = 14; // 2 columns, 3 rows away: 3.6 tiles
+      const g = addGuard(w, 9, 11);
+      run(w, 2);
+      expect(g.y).toBeGreaterThan(11.5); // coming down the ladder
+    });
+
+    it("the close range is a radius, not a whole floor: just outside it the guard stays up", () => {
+      const w = twoFloors(null);
+      w.hero.x = 3; // 6 columns, 3 rows: 6.7 tiles, behind the guard
+      w.hero.y = 14;
+      const g = addGuard(w, 9, 11);
+      run(w, 2);
+      expect(g.y).toBe(11);
+    });
+  });
+
+  describe("a hero above them", () => {
+    it("a far-away guard on a lower floor climbs to the hero's floor, wherever the exit is", () => {
+      const w = exitUpstairs(27); // the exit has nothing to do with it
+      w.hero.x = 12;
+      w.hero.y = 11;
+      const g = addGuard(w, 3, 14);
+      run(w, 3);
+      expect(g.y).toBeLessThan(12.5);
+    });
+
+    it("goes up first, then closes in along the hero's floor", () => {
+      const w = exitUpstairs(27);
+      w.hero.x = 25;
+      w.hero.y = 11;
+      const g = addGuard(w, 3, 14);
+      let xWhenUp = -1;
+      for (let i = 0; i < 60 * 6; i++) {
+        tick(w);
+        if (xWhenUp < 0 && g.y <= 11.01) xWhenUp = g.x;
+        if (w.status !== "playing") break;
+      }
+      expect(xWhenUp).toBeGreaterThan(0); // it did get up
+      expect(xWhenUp).toBeLessThan(7); // by the nearest ladder (column 5), not by running across first
+      expect(g.x).toBeGreaterThan(xWhenUp + 3); // and then it ran towards him
+    });
+
+    it("keeps going floor by floor, up to the hero", () => {
+      const w = makeWorld({
+        9: "#####H######################",
+        10: ".....H......................",
+        11: ".....H......................",
+        12: "#####H######################",
+        13: ".....H......................",
+        14: ".....H......................",
+        15: FLOOR,
+      });
+      w.hero.x = 14;
+      w.hero.y = 8;
+      const g = addGuard(w, 8, 14);
+      run(w, 6);
+      expect(g.y).toBeLessThanOrEqual(8.1);
+    });
+
+    it("with no way up it sweeps its floor instead of freezing", () => {
+      const w = makeWorld({ 12: FLOOR, 14: "", 15: FLOOR });
+      w.hero.x = 10;
+      w.hero.y = 11;
+      const g = addGuard(w, 20, 14);
+      run(w, 0.5);
+      const x = g.x;
+      run(w, 2);
+      expect(g.y).toBe(14);
+      expect(Math.abs(g.x - x)).toBeGreaterThan(1);
+    });
+
+    it("a hero below and far away, even near the exit, does not draw a guard down", () => {
+      const w = makeWorld({
+        12: "#########H#################",
+        13: ".........H..................",
+        14: row(28, { 9: "H", 20: "E" }),
+        15: FLOOR,
+      });
+      w.hero.x = 19;
+      w.hero.y = 14;
+      const g = addGuard(w, 3, 11);
+      run(w, 3);
+      expect(g.y).toBe(11);
+    });
+
+    it("a far guard on the hero's own floor just sweeps", () => {
+      const w = makeWorld({ 14: ".P.E", 15: FLOOR });
+      w.hero.x = 1;
+      w.hero.y = 14;
+      const g = addGuard(w, 27, 14); // 26 columns away
+      run(w, 1.5);
+      expect(g.x).toBeGreaterThan(25);
+    });
+
+    it("guards go back to their posts when the hero drops below them and away", () => {
+      const w = exitUpstairs(22);
+      w.hero.x = 20;
+      w.hero.y = 11;
+      const g = addGuard(w, 3, 14);
+      run(w, 1.5);
+      expect(g.y).toBeLessThan(14); // on its way up
+      w.hero.x = 26; // far away and now below the guard
+      w.hero.y = 14;
+      run(w, 4);
+      expect(g.y).toBe(14); // back at its post
+    });
+  });
+});
+
+describe("guards never end up stranded or jammed", () => {
+  it("with the hero parked at the exit, every guard that has a way up reaches his floor", () => {
+    const stranded: string[] = [];
+    LEVEL_DEFS.forEach((def, i) => {
+      const level = parseLevel(def);
+      const w = new World(level, difficultyFor(i, TOTAL_LEVELS));
+      w.debug.invincible = true;
+      for (let t = 0; t < 60 * 45; t++) {
+        w.hero.x = level.exit.x;
+        w.hero.y = level.exit.y;
+        w.update(SIM_DT, NO_INPUT);
+      }
+      for (const [gi, g] of w.guards.entries()) {
+        if (!g.alive) continue;
+        const cur = { x: Math.round(g.x), y: Math.round(g.y) };
+        if (cur.y <= level.exit.y + 1) continue; // already on his floor (or on the ladder up to it)
+        const wayUp = nextStepToNearest(
+          w,
+          cur,
+          (x, y) => y < cur.y && (w.tileAt(x, y) === "ladder" || w.supported(x, y)),
+        );
+        if (wayUp) stranded.push(`${def.name} guard ${gi} at ${cur.x},${cur.y}`);
+      }
+    });
+    expect(stranded).toEqual([]);
+  }, 180_000);
 });

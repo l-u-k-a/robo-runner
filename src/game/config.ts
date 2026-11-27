@@ -47,6 +47,11 @@ export const CFG = {
   patrolPause: 0.8,
   /** A chasing guard gives up once the hero is this much farther than the aggro radius. */
   aggroHysteresis: 6,
+  /** Within this many tiles (about a floor and a half) a guard chases whatever floor the hero is on. */
+  closeChase: 4.5,
+  /** A guard waiting behind another one gives up queueing and walks through after this long. */
+  holdPatience: 0.6,
+  closeChaseHysteresis: 1.5,
   /** Bomb: seconds until it blows, and the blast radius in tiles. */
   bombFuse: 2.5,
   bombRadius: 2.3,

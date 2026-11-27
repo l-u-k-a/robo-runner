@@ -1,6 +1,6 @@
 import { CFG, COLS, ROWS } from "./config";
 import { NEUTRAL, type Difficulty } from "./difficulty";
-import { nextStep, type GridView } from "./pathfinding";
+import { nextStep, nextStepToNearest, type GridView } from "./pathfinding";
 import {
   newChar,
   stepCharacter,
@@ -82,6 +82,8 @@ export interface Beam {
 /** What a guard remembers: whether it has noticed the hero, and where its patch of floor is. */
 interface GuardBrain {
   alert: boolean;
+  /** How long this guard has been waiting behind another one. */
+  holdT: number;
   home: Pos;
   dir: 1 | -1;
   wait: number;
@@ -381,6 +383,18 @@ export class World implements MoveEnv, GridView {
     this.held = null;
   }
 
+  /** Debug invincibility: lift a buried hero out of the closed pit instead of killing him. */
+  private unbury(h: Char, p: Pos): void {
+    if (h.mode === "pit" || h.mode === "fall") {
+      h.trapX = p.x;
+      h.trapY = p.y;
+      if (this.climbOut(h, h.facing)) return;
+    }
+    h.x = p.x;
+    h.y = p.y - 1;
+    h.mode = "ground";
+  }
+
   isGlued(g: Char): boolean {
     return (
       g.mode === "ground" &&
@@ -430,11 +444,11 @@ export class World implements MoveEnv, GridView {
     }
   }
 
-  private killHero(): void {
+  private killHero(buriedIn?: Pos): void {
     if (this.status !== "playing") return;
     if (this.debug.invincible) {
       // Never leave an invincible hero stuck inside a refilled pit.
-      if (this.hero.mode === "pit") this.climbOut(this.hero, this.hero.facing);
+      if (buriedIn) this.unbury(this.hero, buriedIn);
       return;
     }
     this.status = "dying";
@@ -467,12 +481,18 @@ export class World implements MoveEnv, GridView {
   }
 
   /** The pit closed: anything still inside it dies. */
+  /**
+   * The pit closed: anything still in it dies. "In it" means any overlap with the pit's cell, so a
+   * character who was only part-way into a refilling pit is buried too (otherwise he would finish
+   * his fall inside the solid floor). Standing on the floor above it, or on a trapped guard's head,
+   * is a full tile up and is safe.
+   */
   private bury(p: Pit): void {
     const inside = (c: Char): boolean =>
       c.alive &&
       ((c.mode === "pit" && c.trapX === p.x && c.trapY === p.y) ||
-        (Math.abs(c.x - p.x) < 0.5 && Math.abs(c.y - p.y) < 0.5));
-    if (inside(this.hero)) this.killHero();
+        (Math.abs(c.x - p.x) < 1 - 1e-3 && Math.abs(c.y - p.y) < 1 - 1e-3));
+    if (inside(this.hero)) this.killHero(p);
     for (const g of this.guards) {
       if (inside(g)) this.killGuard(g);
     }
@@ -555,16 +575,22 @@ export class World implements MoveEnv, GridView {
   private brainFor(idx: number, g: Char): GuardBrain {
     let b = this.brains[idx];
     if (!b) {
-      b = { alert: false, home: { x: Math.round(g.x), y: Math.round(g.y) }, dir: 1, wait: 0 };
+      b = { alert: false, holdT: 0, home: { x: Math.round(g.x), y: Math.round(g.y) }, dir: 1, wait: 0 };
       this.brains[idx] = b;
     }
     return b;
   }
 
   /**
-   * Guards notice the hero within the aggro radius (a column counts 1, a floor counts 3) and keep
-   * chasing until he is clearly farther away. Everyone else patrols, so the hero cannot drag the whole
-   * level down to the bottom floor.
+   * When does a guard go after the hero? Any one of these is enough:
+   *  - He is on a higher floor than the guard is on right now. Then the guard chases wherever he
+   *    is (see `climbInput`: first up to his floor, then along it), so nobody stays stranded below.
+   *  - A guard that has already climbed above its post keeps hunting on that floor until he drops
+   *    below it.
+   *  - He is very close (`CFG.closeChase`, about a floor and a half): chase on any floor.
+   *  - He is within `diff.aggro` (a column counts 1, a floor counts 3) and not below its post.
+   * Once chasing, a guard keeps going a little beyond the limits (hysteresis). Otherwise it
+   * patrols its own floor, so the hero cannot drag the guards downstairs.
    */
   private updateAwareness(g: Char, b: GuardBrain): void {
     const h = this.hero;
@@ -572,9 +598,29 @@ export class World implements MoveEnv, GridView {
       b.alert = false;
       return;
     }
+    const heroRow = Math.round(h.y);
+    const curRow = this.floorRow(g);
+    const below = heroRow > b.home.y;
+    const above = heroRow <= curRow - 2;
+    const elevated = curRow < b.home.y - 1;
+    const near = Math.hypot(g.x - h.x, g.y - h.y);
     const d = Math.abs(g.x - h.x) + 3 * Math.abs(g.y - h.y);
-    if (!b.alert && d <= this.diff.aggro) b.alert = true;
-    else if (b.alert && d > this.diff.aggro + CFG.aggroHysteresis) b.alert = false;
+
+    b.alert =
+      above ||
+      (b.alert
+        ? near <= CFG.closeChase + CFG.closeChaseHysteresis ||
+          (elevated && heroRow <= curRow + 1) ||
+          (!below && d <= this.diff.aggro + CFG.aggroHysteresis)
+        : near <= CFG.closeChase || (!below && d <= this.diff.aggro));
+  }
+
+  /**
+   * The floor row a character counts as being on: its own row when standing, the row below its feet
+   * while it is part-way up a ladder. (Rounding instead flips half-way up a rung.)
+   */
+  private floorRow(c: Char): number {
+    return Math.ceil(c.y - 1e-4);
   }
 
   private decoyVisible(g: Char): boolean {
@@ -656,9 +702,29 @@ export class World implements MoveEnv, GridView {
     const brain = this.brainFor(idx, g);
     const hc = { x: Math.round(this.hero.x), y: Math.round(this.hero.y) };
     if (brain.alert || this.decoyVisible(g)) {
+      const cur = { x: Math.round(g.x), y: Math.round(g.y) };
+      if (!this.decoyVisible(g) && hc.y <= this.floorRow(g) - 2) {
+        // The hero is on a higher floor: first get up there, then close in horizontally.
+        return this.climbInput(g, idx, cur) ?? this.patrolInput(g, idx, brain);
+      }
       return this.pathInput(g, idx, this.guardTarget(g, idx), hc, true);
     }
     return this.patrolInput(g, idx, brain);
+  }
+
+  /**
+   * The hero is on a higher floor: head for the nearest cell on his floor (or above it). BFS takes the
+   * shortest way there, so the guard climbs the closest ladder first and then runs along his floor;
+   * a level whose only way up goes down and around first works too. The goal is fixed by the hero's
+   * floor, not by the guard's position, so the guard cannot loop between two floors. Returns null when
+   * the hero's floor cannot be reached from here.
+   */
+  private climbInput(g: Char, idx: number, cur: Pos): MoveInput | null {
+    const heroFloor = this.floorRow(this.hero);
+    const target = (x: number, y: number): boolean =>
+      y <= heroFloor && this.tileAt(x, y) !== "ladder" && this.standable(x, y);
+    if (!nextStepToNearest(this.guardView, cur, target)) return null;
+    return this.pathInput(g, idx, cur, cur, true, target);
   }
 
   /** Walks the guard's own platform from end to end, pausing at each end. */
@@ -684,7 +750,14 @@ export class World implements MoveEnv, GridView {
   }
 
   /** Turns "go to this cell" into a move, using BFS around the other guards when `avoidOthers`. */
-  private pathInput(g: Char, idx: number, target: Pos, hc: Pos, avoidOthers: boolean): MoveInput {
+  private pathInput(
+    g: Char,
+    idx: number,
+    target: Pos,
+    hc: Pos,
+    avoidOthers: boolean,
+    goal?: (x: number, y: number) => boolean,
+  ): MoveInput {
     const cur = { x: Math.round(g.x), y: Math.round(g.y) };
 
     // Keep clear of the other guards' cells (and the steps they just claimed) so the pack spreads out.
@@ -699,16 +772,31 @@ export class World implements MoveEnv, GridView {
     }
     blocked.delete(cellKey(cur.x, cur.y));
 
-    let step = nextStep(this.guardView, cur, target, {}, blocked);
+    const find = (blk?: ReadonlySet<number>): Pos | null =>
+      goal ? nextStepToNearest(this.guardView, cur, goal, {}, blk) : nextStep(this.guardView, cur, target, {}, blk);
+    let step = find(blocked);
     let hold = false;
+    if (step && avoidOthers && step.y > cur.y) {
+      // The way around the other guards goes back down. If the direct route does not, wait in line
+      // instead (patience below); otherwise a guard just below the hero's floor yo-yos on its ladder.
+      const direct = goal ? find() : nextStep(this.guardView, cur, target);
+      if (direct && direct.y <= cur.y) step = null;
+    }
     if (!step) {
       // No route around the others: take the shortest one, but queue up instead of overlapping.
-      const free =
-        nextStep(this.guardView, cur, target) ??
-        (target !== hc ? nextStep(this.guardView, cur, hc) : null);
-      if (free && blocked.has(cellKey(free.x, free.y))) hold = true;
-      else step = free;
+      const free = goal
+        ? find()
+        : (nextStep(this.guardView, cur, target) ??
+          (target !== hc ? nextStep(this.guardView, cur, hc) : null));
+      if (free && blocked.has(cellKey(free.x, free.y))) {
+        // Queue behind the other guard, but not for ever: an idle guard on a ladder must not jam the rest.
+        const brain = this.brainFor(idx, g);
+        brain.holdT += this.dt;
+        if (brain.holdT > CFG.holdPatience) step = free;
+        else hold = true;
+      } else step = free;
     }
+    if (step && !hold && avoidOthers && !blocked.has(cellKey(step.x, step.y))) this.brainFor(idx, g).holdT = 0;
     if (step && avoidOthers) this.reserved.add(cellKey(step.x, step.y));
 
     let dx = 0;
@@ -739,7 +827,7 @@ export class World implements MoveEnv, GridView {
     }
     const s = spawns[0];
     Object.assign(g, newChar("guard", s.x, s.y));
-    this.brains[this.guards.indexOf(g)] = { alert: false, home: { x: s.x, y: s.y }, dir: 1, wait: 0 };
+    this.brains[this.guards.indexOf(g)] = { alert: false, holdT: 0, home: { x: s.x, y: s.y }, dir: 1, wait: 0 };
     this.emit("guardRespawn", s.x, s.y);
   }
 

@@ -1,6 +1,6 @@
 ---
 name: game-customizer
-description: Customizes the Robo Runner game in this repo. Use when the user wants to change game mechanics (movement, digging, pits, lives, scoring, difficulty), visual style (sprites, floor materials, backgrounds, portal, particles), UI (HUD, title/pause/options menus, screens), NPC guard AI (targeting, speed, behaviour), or to add new tools/pickups. For a whole new scenery+music+level theme, use the theme-builder skill instead.
+description: Customizes the Robo Runner game in this repo (for deep guard-AI work prefer npc-ai-expert). Use when the user wants to change game mechanics (movement, digging, pits, lives, scoring, difficulty), visual style (sprites, floor materials, backgrounds, portal, particles), UI (HUD, title/pause/options menus, screens), NPC guard AI (targeting, speed, behaviour), or to add new tools/pickups. For a whole new scenery+music+level theme, use the theme-builder skill instead.
 ---
 
 # Game customizer for Robo Runner
@@ -77,7 +77,11 @@ Headless screenshots barely advance animations; `&at=` and the shortcuts above a
 
 ## NPC (guard) AI
 
-- **Patrol vs chase:** each guard has a `GuardBrain` (`alert`, `home`, `dir`, `wait`). `updateAwareness` sets `alert` when the hero is within `diff.aggro` (columns + 3 x floors) and clears it beyond `aggro + CFG.aggroHysteresis`. Not alert means `patrolInput`: sweep `patrolRange(home)` (the standable cells on the home row, up to the next wall or gap) at `CFG.patrolSpeed`, pausing `CFG.patrolPause` at each end, and walk home first if displaced. A visible decoy always counts as alert. Tests that put a guard far from the hero must either move it inside the radius or expect patrol behaviour.
+For anything beyond a one-line tweak to the guards, use the **npc-ai-expert** skill: it has the rules the user has asked for, the full AI map, a census and trace probe, and the catalogue of AI bugs already fixed here.
+
+- **Patrol vs chase:** each guard has a `GuardBrain` (`alert`, `home`, `dir`, `wait`). `updateAwareness` sets `alert` when the hero is within `diff.aggro` (columns + 3 x floors) and clears it beyond `aggro + CFG.aggroHysteresis`. Not alert means `patrolInput`: sweep `patrolRange(home)` (the standable cells on the home row, up to the next wall or gap) at `CFG.patrolSpeed`, pausing `CFG.patrolPause` at each end, and walk home first if displaced. Alert rules (`updateAwareness`, any one is enough): the hero is on a higher floor than the guard (always, any distance); the guard has already climbed above its post and the hero is not below that floor; the hero is within `CFG.closeChase` (4.5 tiles, any floor); or he is within `diff.aggro` and not below the guard's home row. A guard never follows a hero who is farther away and on a lower floor (not lured downstairs). A visible decoy always counts as alert too. Limits have hysteresis. A patrolling guard can walk into the close range on its own, so test setups should put the hero on the side the guard sweeps away from.
+- **Chasing upwards:** `climbInput` paths to the nearest standable cell on the hero's floor (`nextStepToNearest` in `pathfinding.ts`), so the guard takes the closest way up and then the normal chase takes over. The goal is fixed by the hero's floor, never by the guard's own row: a goal of "one floor above me" made guards loop when the route went down first, and rounding a guard's row mid-ladder flipped its decisions every tick. Use `floorRow(c)` (the row below its feet while climbing) whenever you need the floor a character is on. A chasing guard also never takes a downward detour around another guard when the direct route does not go down; it queues and, after `CFG.holdPatience`, walks through.
+- The all-levels test `guards never end up stranded or jammed` parks the hero on the exit floor for 45 s and fails if any guard with a way up has not arrived; run it after any AI change. Tests that put a guard far from the hero must either move it inside the radius or expect patrol behaviour.
 - **Targeting** is `World.guardTarget(g, idx)`: roles by `idx % 4` (chaser, ambusher, flanker, door warden) with a direct attack inside 4 tiles, and decoys with line of sight override everything. New behaviours usually mean a new role or a change to this function.
 - **Movement decisions** are `guardInput`: BFS (`nextStep`) over cells with other guards' cells blocked, a `reserved` set for the steps already claimed this tick, and queueing instead of overlapping when no free route exists. BFS runs per guard per tick, so keep it cheap.
 - **Speed:** `PACE` per guard, times `diff.guardSpeed`; glue multiplies by `CFG.glueSlow`. Anything that stops a guard acting goes through `disabled(g)` (`stun` for shock/EMP, `cough` for smoke), which is also what makes them harmless to touch.
@@ -107,6 +111,8 @@ Tools are single-slot pickups; Space/C uses the held one. The three most recent 
 Design rules for tools: every effect must be bounded in time or area, must not be able to soft-lock a level (permanent walls, unreachable gold), must give feedback (sound, particles, visible state), and should not make guards useless or the hero unkillable for long. Describe the balance assumptions to the user.
 
 ## Pitfalls collected from earlier work
+
+- Overlap rules must match what is drawn: a character is a full tile, so "is he in this cell" means any overlap (`|dx| < 1 && |dy| < 1`), not "within half a tile of its centre". The half-tile version let a hero part-way into a closing pit survive and land inside the floor. `tests/fuzz.test.ts` plays random inputs on many levels and fails if anyone ends up inside solid floor; run it after changing movement, pits or bombs.
 
 - Scripts that patch by exact text fail silently or half-way when the user's formatter changed quotes. Assert anchors, and re-read on failure.
 - The edit tool cannot write outside the workspace; write temp files under `/tmp` through the shell, and delete them.

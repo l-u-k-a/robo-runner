@@ -114,3 +114,41 @@ export function reachable(
 }
 
 export const cellIndex = idx;
+
+/**
+ * Breadth-first search to the *nearest* cell for which `isGoal` is true (not a fixed target).
+ * Returns the first step on the way there, or null when no such cell can be reached.
+ * Used by guards that must first get up to the hero's floor, by whichever ladder is closest.
+ */
+export function nextStepToNearest(
+  g: GridView,
+  from: Pos,
+  isGoal: (x: number, y: number) => boolean,
+  opts: NeighborOpts = {},
+  blocked?: ReadonlySet<number>,
+): Pos | null {
+  const prev = new Int16Array(COLS * ROWS).fill(-2);
+  const queue: number[] = [];
+  const start = idx(from.x, from.y);
+  prev[start] = -1;
+  queue.push(start);
+  let goal = -1;
+  for (let head = 0; head < queue.length && goal < 0; head++) {
+    const cur = queue[head];
+    const cx = cur % COLS;
+    const cy = (cur - cx) / COLS;
+    forEachNeighbor(g, cx, cy, opts, (nx, ny) => {
+      if (goal >= 0 || nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) return;
+      const ni = idx(nx, ny);
+      if (prev[ni] !== -2) return;
+      if (blocked && blocked.has(ni)) return;
+      prev[ni] = cur;
+      if (isGoal(nx, ny)) goal = ni;
+      queue.push(ni);
+    });
+  }
+  if (goal < 0) return null;
+  let cur = goal;
+  while (prev[cur] !== start) cur = prev[cur];
+  return { x: cur % COLS, y: (cur - (cur % COLS)) / COLS };
+}
