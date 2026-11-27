@@ -17,6 +17,7 @@ TypeScript + Canvas + Vite, no runtime dependencies. All game rules are pure Typ
 | Scenes, input, saving | `src/core/game.ts` (state machine glue, menus, ending), `src/core/flow.ts` (lives, score, scene states), `src/core/input.ts`, `src/core/settings.ts`, `src/core/progress.ts`, `src/core/stats.ts`, `src/core/debug.ts` (debug panel) |
 | Drawing | `src/render/renderer.ts` (all screens, HUD), `sprites.ts` (generated pixel art), `backgrounds.ts` (scenery), `surfaces.ts` (floor materials), `particles.ts`, `assets.ts` (swappable asset interface) |
 | Sound | `src/audio/sfx.ts` (effects), `music.ts` (player), `tracks.ts` (songs) |
+| Web app, SEO | `src/pwa.ts` (service-worker registration, install prompt behind the title-menu INSTALL APP item), `vite.config.ts` (generates `dist/sw.js` from `pwa/sw.template.js`), `public/` (icons, manifest, preview card, robots, sitemap), meta tags in `index.html`, generators in `scripts/` |
 | Tests | `tests/*.test.ts`, helpers in `tests/helpers.ts` (`makeWorld`, `run`, `tick`) |
 
 ## Workflow for any change
@@ -111,6 +112,8 @@ Tools are single-slot pickups; Space/C uses the held one. The three most recent 
 Design rules for tools: every effect must be bounded in time or area, must not be able to soft-lock a level (permanent walls, unreachable gold), must give feedback (sound, particles, visible state), and should not make guards useless or the hero unkillable for long. Describe the balance assumptions to the user.
 
 ## Pitfalls collected from earlier work
+
+- Service worker: it only runs in production builds, so test it with `npm run build && npx vite preview`, not the dev server. The template's `__VERSION__`/`__PRECACHE__` placeholders must appear only in code (the build fails if one is left). Adding a file that the game needs at runtime means nothing extra (everything in `dist/` is precached except the files in `SKIP`), but a file only for crawlers or sharing should go in `SKIP`.
 
 - Overlap rules must match what is drawn: a character is a full tile, so "is he in this cell" means any overlap (`|dx| < 1 && |dy| < 1`), not "within half a tile of its centre". The half-tile version let a hero part-way into a closing pit survive and land inside the floor. `tests/fuzz.test.ts` plays random inputs on many levels and fails if anyone ends up inside solid floor; run it after changing movement, pits or bombs.
 

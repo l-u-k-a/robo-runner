@@ -3,7 +3,85 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Robo Runner</title>
+    <title>Robo Runner – Retro Pixel Puzzle Platformer, Free to Play</title>
+    <meta
+      name="description"
+      content="Play Robo Runner free in your browser: dig pits with your laser, grab the gold, outsmart the guards and escape through the portal in 60 retro pixel-art levels."
+    />
+    <meta name="author" content="Luka Kancheli" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <link rel="canonical" href="https://robo-runner-lovat.vercel.app/" />
+    <meta name="theme-color" content="#1a0f08" />
+    <meta name="color-scheme" content="dark" />
+
+    <!-- Icons and installable web app -->
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="application-name" content="Robo Runner" />
+    <meta name="apple-mobile-web-app-title" content="Robo Runner" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+    <!-- Link previews: Open Graph (Facebook, LinkedIn, Slack, WhatsApp, Discord) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Robo Runner" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:url" content="https://robo-runner-lovat.vercel.app/" />
+    <meta property="og:title" content="Robo Runner – Retro Pixel Puzzle Platformer" />
+    <meta
+      property="og:description"
+      content="Dig pits with your laser, grab the gold, outsmart the guards and escape through the portal. 60 levels, free in your browser."
+    />
+    <meta property="og:image" content="https://robo-runner-lovat.vercel.app/og-image.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="Robo Runner: a blue robot, red guards, gold coins, ladders and zip-lines on floating islands in pixel art"
+    />
+
+    <!-- Link previews: X / Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Robo Runner – Retro Pixel Puzzle Platformer" />
+    <meta
+      name="twitter:description"
+      content="Dig pits with your laser, grab the gold, outsmart the guards and escape through the portal. 60 levels, free in your browser."
+    />
+    <meta name="twitter:image" content="https://robo-runner-lovat.vercel.app/og-image.png" />
+    <meta
+      name="twitter:image:alt"
+      content="Robo Runner: a blue robot, red guards, gold coins, ladders and zip-lines on floating islands in pixel art"
+    />
+
+    <!-- Structured data: lets search engines show it as a free browser game -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "VideoGame",
+        "name": "Robo Runner",
+        "url": "https://robo-runner-lovat.vercel.app/",
+        "image": "https://robo-runner-lovat.vercel.app/og-image.png",
+        "description": "A retro pixel-art puzzle platformer. Dig pits with a laser, collect the gold, outsmart the guards and escape through the portal across 60 levels.",
+        "genre": ["Puzzle", "Platformer", "Arcade"],
+        "gamePlatform": "Web browser",
+        "applicationCategory": "Game",
+        "operatingSystem": "Any",
+        "playMode": "SinglePlayer",
+        "inLanguage": "en",
+        "isAccessibleForFree": true,
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "author": {
+          "@type": "Person",
+          "name": "Luka Kancheli",
+          "url": "https://github.com/l-u-k-a"
+        }
+      }
+    </script>
+
     <style>
       html,
       body {
@@ -30,12 +108,43 @@
         image-rendering: pixelated;
         background: #000;
       }
+      /* Readable by search engines and screen readers, not drawn on screen. */
+      .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        padding: 0;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+        border: 0;
+      }
+      noscript {
+        color: #ffe9b0;
+        font: 16px "Courier New", monospace;
+        text-align: center;
+        padding: 24px;
+      }
     </style>
   </head>
   <body>
-    <div id="frame">
-      <canvas id="game" aria-label="Robo Runner game" role="img"></canvas>
-    </div>
+    <main>
+      <div class="visually-hidden">
+        <h1>Robo Runner – a retro pixel-art puzzle platformer</h1>
+        <p>
+          Guide a laser-wielding robot through 60 levels of temples, ruins, fortresses, ice caves,
+          sunken cities and neon grids. Dig pits to trap the guards, collect every gold coin and reach
+          the portal. Use tools like shock traps, decoys, smoke bombs, glue and bombs. Play free in
+          your browser with the keyboard: arrows to move and climb, Z and X to dig, Space to use a
+          tool, P to pause.
+        </p>
+      </div>
+      <div id="frame">
+        <canvas id="game" aria-label="Robo Runner game" role="img"></canvas>
+      </div>
+      <noscript>Robo Runner needs JavaScript to run. Please enable it and reload the page.</noscript>
+    </main>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

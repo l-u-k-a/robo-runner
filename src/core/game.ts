@@ -20,6 +20,7 @@ import { ALL_TOOLS, DebugPanel, type DebugState } from "./debug";
 import { GameFlow, type GameMode } from "./flow";
 import { Input } from "./input";
 import { Accumulator } from "./loop";
+import { canInstall, promptInstall } from "../pwa";
 import { Menu } from "./menu";
 import {
   loadProgress,
@@ -68,6 +69,7 @@ type MainId =
   | "endless"
   | "options"
   | "credits"
+  | "install"
   | "fullscreen";
 type Screen = "main" | "options" | "select" | "credits";
 type PauseScreen = "menu" | "options" | "credits";
@@ -196,6 +198,7 @@ export class Game {
       id: "fullscreen",
       label: `FULLSCREEN: ${document.fullscreenElement ? "ON" : "OFF"}`,
     });
+    if (canInstall()) e.push({ id: "install", label: "INSTALL APP" });
     return e;
   }
 
@@ -283,6 +286,15 @@ export class Game {
         this.openMain("credits");
       return;
     }
+    if (this.screen === "main") {
+      // Entries can appear while the menu is open (the browser offers installing a moment after
+      // the page loads), so keep the cursor range in sync with the list.
+      const n = this.mainEntries().length;
+      if (this.menu.count !== n) {
+        this.menu.count = n;
+        this.menu.index = Math.min(this.menu.index, n - 1);
+      }
+    }
     if (up) this.menu.up();
     if (down) this.menu.down();
     if (up || down) this.sfx.play("menu");
@@ -317,6 +329,10 @@ export class Game {
           break;
         case "fullscreen":
           this.toggleFullscreen();
+          break;
+        case "install":
+          // The menu list changes once the browser's dialog has been used, so move the cursor back.
+          void promptInstall().finally(() => this.openMain("start"));
           break;
         default:
           break;

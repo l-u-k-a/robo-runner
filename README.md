@@ -18,6 +18,23 @@ The title screen has Start Game, Options (music, sound fx, volume, golden robot;
 
 Dev shortcuts: open `/?level=3` to jump straight into a level (add `&collect` to open the exit portal, `&pause` or `&pause=options` to open the pause menu, `&tool=bomb&use` to fire a tool), `/?ending` (or `ending=results`, `ending=credits`, plus `&at=7` to start that many seconds in) to preview the finale, and add `&debug` to open the debug panel on load. In game, press `` ` `` or F2 to toggle the panel. It can disable guards, make the hero invincible, switch sound effects and music on or off, jump to any level, restart the level and collect all gold.
 
+## Install as an app (PWA)
+
+Robo Runner is an installable progressive web app and plays offline after the first visit (all art and sound are generated in code, so nothing else needs the network).
+
+- Install from the browser's install button in the address bar, or **INSTALL APP** on the title menu (shown when the browser offers it: Chrome, Edge and Android). On iPhone/iPad use Share, then "Add to Home Screen".
+- The installed app opens fullscreen in landscape. Options and unlocked levels are kept.
+- The service worker is generated at build time by the small plugin in `vite.config.ts` from `pwa/sw.template.js`: it precaches the hashed build files, uses a fresh cache per deploy (old ones are deleted) and loads the page network-first, so a new deploy is picked up on the next visit while online. It is only registered in production builds, never under `npm run dev`. To test it locally: `npm run build && npx vite preview`.
+- Controls are keyboard only for now, so on phones and tablets the installed game needs a keyboard.
+
+## Icons, link previews and SEO
+
+Static files in `public/` are copied to the site root on build: `favicon.svg`, `favicon.ico`, `apple-touch-icon.png`, `icon-192.png` / `icon-512.png` (installable web app via `site.webmanifest`), `og-image.png` (1200x630 link-preview card), `robots.txt` and `sitemap.xml`. `index.html` has the description, canonical URL, Open Graph and X/Twitter card tags, and `VideoGame` structured data.
+
+- Icons: `python3 scripts/gen-icons.py` (a 16x16 pixel-art robot head in the hero's colours, scaled crisply to every size, plus a maskable Android icon; needs Pillow).
+- Preview card and install-dialog screenshot: `python3 scripts/gen-og.py [level]` with `npm run dev` running (composes a real level screenshot with the title logo; needs Chrome and Pillow).
+- The site URL `https://robo-runner-lovat.vercel.app/` is written in `index.html` (canonical, `og:url`, `og:image`, `twitter:image`, structured data), `public/robots.txt` and `public/sitemap.xml`. Update those if you move to a custom domain.
+
 ## Controls
 
 | Key                     | Action                                                        |
